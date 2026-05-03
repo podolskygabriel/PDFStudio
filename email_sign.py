@@ -8,7 +8,9 @@ so credentials are tied to the local user account and machine.
 """
 
 import base64
+import html
 import json
+import logging
 import os
 import platform
 import smtplib
@@ -68,15 +70,14 @@ def _encrypt_value(value: str) -> str:
     if not value:
         return ""
     key = _get_machine_key()
-    if key:
-        try:
-            from cryptography.fernet import Fernet
-            f = Fernet(key)
-            return "enc:" + f.encrypt(value.encode()).decode()
-        except Exception:
-            pass
-    # Fallback: base64 obfuscation (not real encryption)
-    return "b64:" + base64.b64encode(value.encode()).decode()
+    if not key:
+        raise RuntimeError(
+            "Encryption key unavailable — the 'cryptography' package is required "
+            "to store SMTP credentials securely."
+        )
+    from cryptography.fernet import Fernet
+    f = Fernet(key)
+    return "enc:" + f.encrypt(value.encode()).decode()
 
 
 def _decrypt_value(stored: str) -> str:
@@ -98,7 +99,10 @@ def _decrypt_value(stored: str) -> str:
             return base64.b64decode(stored[4:]).decode()
         except Exception:
             return ""
-    # Legacy plaintext (from older versions) — return as-is
+    # Legacy plaintext (from older versions or manual edits) — accept but warn.
+    logging.getLogger("PDFStudio.email").warning(
+        "smtp_config.json contains a plaintext credential — please re-save your SMTP settings"
+    )
     return stored
 
 
@@ -250,16 +254,16 @@ def send_signing_email(config: SMTPConfig, request: SignRequest) -> tuple[bool, 
                 <h2 style="color: white; margin: 0;">PDF Studio — Signature Request</h2>
             </div>
             <div style="padding: 24px; background: #f9f9f9; border: 1px solid #e0e0e0;">
-                <p>Hi {request.recipient_name or 'there'},</p>
+                <p>Hi {html.escape(request.recipient_name or 'there')},</p>
                 <p>You've been asked to review and sign the attached document.</p>
                 <div style="background: white; border: 1px solid #ddd; border-radius: 8px;
                             padding: 16px; margin: 16px 0;">
                     <p style="margin: 4px 0;"><strong>Document:</strong>
-                       {Path(request.pdf_path).name}</p>
+                       {html.escape(Path(request.pdf_path).name)}</p>
                     <p style="margin: 4px 0;"><strong>Request ID:</strong>
-                       {request.request_id}</p>
+                       {html.escape(request.request_id)}</p>
                     <p style="margin: 4px 0;"><strong>From:</strong>
-                       {config.sender_name}</p>
+                       {html.escape(config.sender_name or '')}</p>
                 </div>
                 <h3>How to sign:</h3>
                 <ol>
@@ -267,7 +271,7 @@ def send_signing_email(config: SMTPConfig, request: SignRequest) -> tuple[bool, 
                     <li>Add your signature using PDF Studio or any PDF tool</li>
                     <li>Reply to this email with the signed copy attached</li>
                 </ol>
-                {f'<p><em>Note from sender:</em> {request.message}</p>'
+                {f'<p><em>Note from sender:</em> {html.escape(request.message)}</p>'
                  if request.message else ''}
             </div>
             <div style="padding: 12px; text-align: center; color: #888; font-size: 12px;">

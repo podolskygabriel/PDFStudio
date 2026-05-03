@@ -2055,8 +2055,15 @@ class MainWindow(QMainWindow):
         paths = []
         for url in md.urls():
             p = url.toLocalFile()
-            if p and p.lower().endswith(".pdf") and os.path.isfile(p):
-                paths.append(p)
+            if not (p and p.lower().endswith(".pdf") and os.path.isfile(p)):
+                continue
+            try:
+                with open(p, "rb") as fh:
+                    if fh.read(4) != b"%PDF":
+                        continue
+            except OSError:
+                continue
+            paths.append(p)
         return paths
 
     def dragEnterEvent(self, event):

@@ -490,6 +490,17 @@ class SignatureDialog(QDialog):
             "Images (*.png *.jpg *.jpeg *.bmp *.svg)"
         )
         if path:
+            try:
+                size = os.path.getsize(path)
+            except OSError:
+                QMessageBox.warning(self, "Cannot Read", "Could not read the selected file.")
+                return
+            if size > 10 * 1024 * 1024:
+                QMessageBox.warning(
+                    self, "File Too Large",
+                    "Signature image must be under 10 MB."
+                )
+                return
             with open(path, "rb") as f:
                 self._uploaded_image_data = f.read()
             pix = QPixmap(path).scaled(
@@ -607,5 +618,8 @@ def apply_crypto_signature(pdf_path: str, output_path: str,
     except ImportError:
         return False
     except Exception as e:
-        print(f"Crypto signing failed: {e}")
+        import logging
+        logging.getLogger("PDFStudio.signature").warning(
+            "Crypto signing failed: %s", type(e).__name__
+        )
         return False
